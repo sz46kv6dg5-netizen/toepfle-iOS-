@@ -1,0 +1,56 @@
+name: Toepfle
+options:
+  bundleIdPrefix: de.toepfle
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: "$(APPLE_TEAM_ID)"
+
+targets:
+  Toepfle:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Toepfle
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: "Töpfle"
+        CFBundleDisplayName: "Töpfle"
+        PRODUCT_BUNDLE_IDENTIFIER: de.toepfle.app
+        INFOPLIST_FILE: Toepfle/Info.plist
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: "$(APPLE_TEAM_ID)"
+        PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_NAME)"
+        CODE_SIGN_ENTITLEMENTS: Toepfle/Toepfle.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - target: ToepfleShareExtension
+        embed: true
+
+  ToepfleShareExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ToepfleShareExtension
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: "ToepfleShareExtension"
+        CFBundleDisplayName: "Töpfle"
+        PRODUCT_BUNDLE_IDENTIFIER: de.toepfle.app.share
+        INFOPLIST_FILE: ToepfleShareExtension/Info.plist
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: "$(APPLE_TEAM_ID)"
+        PROVISIONING_PROFILE_SPECIFIER: "$(SHARE_PROVISIONING_PROFILE_NAME)"
+        CODE_SIGN_ENTITLEMENTS: ToepfleShareExtension/ToepfleShareExtension.entitlements
+        GENERATE_INFOPLIST_FILE: NO
