@@ -78,20 +78,16 @@ open Toepfle.xcodeproj
 
 ---
 
-## 🔐 3. GitHub Secrets für TestFlight CI/CD
+## 🔐 3. GitHub Secrets für TestFlight CI/CD (Schlanker 4-Secrets-Workflow)
 
-Für den automatischen TestFlight-Build und -Upload über `.github/workflows/ios-testflight.yml` müssen folgende Secrets im GitHub-Repository hinterlegt werden:
+Für den automatischen TestFlight-Build und -Upload über `.github/workflows/ios-testflight.yml` werden **nur 4 Secrets** benötigt (kein `.p12`-Zertifikat und keine manuellen `.mobileprovision`-Dateien erforderlich):
 
 | Secret Name | Beschreibung |
 | :--- | :--- |
-| `BUILD_CERTIFICATE_BASE64` | Base64-kodiertes iOS Distribution Zertifikat (`.p12`) |
-| `P12_PASSWORD` | Passwort des `.p12` Zertifikats |
-| `KEYCHAIN_PASSWORD` | Beliebiges temporäres Passwort für die CI-Keychain |
-| `APP_PROVISIONING_PROFILE_BASE64` | Base64-kodiertes Provisioning Profile der Haupt-App (`de.toepfle.app`) |
-| `SHARE_PROVISIONING_PROFILE_BASE64` | Base64-kodiertes Provisioning Profile der Share Extension (`de.toepfle.app.share`) |
+| `APPLE_TEAM_ID` | Deine 10-stellige Apple Developer Team-ID (z. B. `A1B2C3D4E5`) |
 | `APP_STORE_CONNECT_API_KEY_ID` | Key ID des App Store Connect API-Keys (z. B. `2X9R4HX4P3`) |
 | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID von App Store Connect (UUID) |
-| `APP_STORE_CONNECT_API_KEY_BASE64` | Base64-Inhalt des privaten Schlüssels (`AuthKey_XXXXX.p8`) |
+| `APP_STORE_CONNECT_API_KEY_BASE64` | Base64-kodierter (oder Klartext-) Inhalt des privaten Schlüssels (`AuthKey_XXXXX.p8`) |
 
 ### Base64 Encoding Befehl (macOS/Linux)
 ```bash

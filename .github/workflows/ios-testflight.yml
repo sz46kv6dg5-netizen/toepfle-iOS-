@@ -22,110 +22,98 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Select Xcode Version
+      - name: Verify Required Secrets
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          API_KEY_DATA: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.0.app || sudo xcode-select -s /Applications/Xcode.app
+          MISSING=""
+          [ -z "$TEAM_ID" ] && MISSING="$MISSING APPLE_TEAM_ID"
+          [ -z "$KEY_ID" ] && MISSING="$MISSING APP_STORE_CONNECT_API_KEY_ID"
+          [ -z "$ISSUER_ID" ] && MISSING="$MISSING APP_STORE_CONNECT_ISSUER_ID"
+          [ -z "$API_KEY_DATA" ] && MISSING="$MISSING APP_STORE_CONNECT_API_KEY_BASE64"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Folgende GitHub Repository Secrets fehlen noch:$MISSING"
+            exit 1
+          fi
+          echo "Alle 4 benötigten Secrets sind vorhanden."
+
+      - name: Select Latest Xcode Version
+        run: |
+          LATEST_XCODE=$(find /Applications -maxdepth 1 -name "Xcode*.app" | sort -V | tail -n 1)
+          echo "Verwende Xcode: $LATEST_XCODE"
+          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
           xcodebuild -version
 
       - name: Install XcodeGen
         run: |
           brew install xcodegen
 
-      - name: Setup Keychain & Install Distribution Certificate
+      - name: Configure App Store Connect API Key
         env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'build_temp_keychain_pass' }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_KEY_DATA: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
         run: |
-          # Temporäre Keychain erstellen
-          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          mkdir -p ~/.private_keys
+          if echo "$API_KEY_DATA" | grep -q "BEGIN PRIVATE KEY"; then
+            echo "$API_KEY_DATA" > ~/.private_keys/AuthKey_${KEY_ID}.p8
+          else
+            echo "$API_KEY_DATA" | base64 --decode > ~/.private_keys/AuthKey_${KEY_ID}.p8
+          fi
+          chmod 600 ~/.private_keys/AuthKey_${KEY_ID}.p8
 
-          # P12 Zertifikat decodieren und importieren
-          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/build_cert.p12
-          security import $RUNNER_TEMP/build_cert.p12 -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Keychain zur Suchliste hinzufügen
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
-
-      - name: Install Provisioning Profiles
+      - name: Configure ExportOptions.plist
         env:
-          APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.APP_PROVISIONING_PROFILE_BASE64 }}
-          SHARE_PROVISIONING_PROFILE_BASE64: ${{ secrets.SHARE_PROVISIONING_PROFILE_BASE64 }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$PROFILES_DIR"
-
-          # Haupt-App Profil
-          echo "$APP_PROVISIONING_PROFILE_BASE64" | base64 --decode > /tmp/app.mobileprovision
-          APP_PROFILE_UUID=$(security cms -D -i /tmp/app.mobileprovision | /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
-          APP_PROFILE_NAME=$(security cms -D -i /tmp/app.mobileprovision | /usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin)
-          APPLE_TEAM_ID=$(security cms -D -i /tmp/app.mobileprovision | /usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" /dev/stdin)
-          cp /tmp/app.mobileprovision "$PROFILES_DIR/$APP_PROFILE_UUID.mobileprovision"
-
-          # Share Extension Profil
-          echo "$SHARE_PROVISIONING_PROFILE_BASE64" | base64 --decode > /tmp/share.mobileprovision
-          SHARE_PROFILE_UUID=$(security cms -D -i /tmp/share.mobileprovision | /usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin)
-          SHARE_PROFILE_NAME=$(security cms -D -i /tmp/share.mobileprovision | /usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin)
-          cp /tmp/share.mobileprovision "$PROFILES_DIR/$SHARE_PROFILE_UUID.mobileprovision"
-
-          echo "Extrahierte Konfiguration:"
-          echo "APPLE_TEAM_ID: $APPLE_TEAM_ID"
-          echo "APP_PROFILE_NAME: $APP_PROFILE_NAME ($APP_PROFILE_UUID)"
-          echo "SHARE_PROFILE_NAME: $SHARE_PROFILE_NAME ($SHARE_PROFILE_UUID)"
-
-          # In GitHub Actions Environment exportieren
-          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> $GITHUB_ENV
-          echo "APP_PROVISIONING_PROFILE_NAME=$APP_PROFILE_NAME" >> $GITHUB_ENV
-          echo "SHARE_PROVISIONING_PROFILE_NAME=$SHARE_PROFILE_NAME" >> $GITHUB_ENV
-
-          # ExportOptions.plist aktualisieren
-          sed -i '' "s/APPLE_TEAM_ID_PLACEHOLDER/$APPLE_TEAM_ID/g" ios/ExportOptions.plist
-          sed -i '' "s/APP_PROVISIONING_PROFILE_NAME_PLACEHOLDER/$APP_PROFILE_NAME/g" ios/ExportOptions.plist
-          sed -i '' "s/SHARE_PROVISIONING_PROFILE_NAME_PLACEHOLDER/$SHARE_PROFILE_NAME/g" ios/ExportOptions.plist
+          sed -i '' "s/APPLE_TEAM_ID_PLACEHOLDER/${TEAM_ID}/g" ios/ExportOptions.plist
+          cat ios/ExportOptions.plist
 
       - name: Generate Xcode Project with XcodeGen
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           cd ios
           xcodegen generate --spec project.yml
 
-      - name: Build & Archive App
+      - name: Build & Archive (Unsigned)
         run: |
           mkdir -p build
           xcodebuild archive \
             -project ios/Toepfle.xcodeproj \
             -scheme Toepfle \
-            -configuration Release \
-            -archivePath build/Toepfle.xcarchive \
             -destination "generic/platform=iOS" \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$APP_PROVISIONING_PROFILE_NAME"
+            -archivePath build/Toepfle.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}"
 
-      - name: Export IPA
+      - name: Export & Sign IPA per App Store Connect API
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
-          mkdir -p build/output
+          mkdir -p build/export
           xcodebuild -exportArchive \
             -archivePath build/Toepfle.xcarchive \
+            -exportPath build/export \
             -exportOptionsPlist ios/ExportOptions.plist \
-            -exportPath build/output \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "${KEY_ID}" \
+            -authenticationKeyIssuerID "${ISSUER_ID}"
 
-      - name: Setup App Store Connect API Key & Upload to TestFlight
+      - name: Upload to TestFlight
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
-          mkdir -p ~/.appstoreconnect/private_keys
-          echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8
-
-          IPA_PATH=$(find build/output -name "*.ipa" | head -n 1)
+          IPA_PATH=$(find build/export -name "*.ipa" | head -n 1)
           if [ -z "$IPA_PATH" ]; then
-            echo "Fehler: Keine .ipa Datei im Exportverzeichnis gefunden!"
+            echo "::error::Keine .ipa Datei im Exportverzeichnis gefunden!"
             exit 1
           fi
 
@@ -133,12 +121,25 @@ jobs:
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA_PATH" \
-            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID"
 
-      - name: Cleanup Keychain & Secrets
+      - name: Print Distribution Logs on Failure
+        if: failure()
+        run: |
+          echo "=== Suche nach Distribution Logs ==="
+          find /var/folders -name "*.xcdistributionlogs" -o -name "IDEDistribution*.log" 2>/dev/null | while read -r logfile; do
+            echo "--------------------------------------------------------"
+            echo "Log: $logfile"
+            echo "--------------------------------------------------------"
+            if [ -d "$logfile" ]; then
+              cat "$logfile"/* 2>/dev/null || true
+            else
+              cat "$logfile" 2>/dev/null || true
+            fi
+          done
+
+      - name: Cleanup Private Keys
         if: always()
         run: |
-          security delete-keychain $RUNNER_TEMP/build.keychain || true
-          rm -rf ~/.appstoreconnect/private_keys || true
-          rm -f /tmp/app.mobileprovision /tmp/share.mobileprovision || true
+          rm -rf ~/.private_keys

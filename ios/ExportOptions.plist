@@ -7,17 +7,14 @@
     <key>method</key>
     <string>app-store-connect</string>
     <key>signingStyle</key>
-    <string>manual</string>
+    <string>automatic</string>
     <key>stripSwiftSymbols</key>
     <true/>
     <key>teamID</key>
     <string>APPLE_TEAM_ID_PLACEHOLDER</string>
-    <key>provisioningProfiles</key>
-    <dict>
-        <key>de.toepfle.app</key>
-        <string>APP_PROVISIONING_PROFILE_NAME_PLACEHOLDER</string>
-        <key>de.toepfle.app.share</key>
-        <string>SHARE_PROVISIONING_PROFILE_NAME_PLACEHOLDER</string>
-    </dict>
+    <key>uploadSymbols</key>
+    <true/>
+    <key>manageAppVersionAndBuildNumber</key>
+    <true/>
 </dict>
 </plist>
