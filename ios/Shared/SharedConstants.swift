@@ -2,39 +2,34 @@ import Foundation
 
 public enum SharedConstants {
     public static let appGroupID = "group.de.toepfle.app"
-    public static let defaultBackendURL = "https://rezepte.icareberlin.de/api"
     public static let queueFileName = "pending_imports.json"
 
-    private static let keyBackendURL = "toepfle_backend_url"
-    private static let keyAPIKey = "toepfle_api_key"
+    private static let keyDefaultServings = "toepfle_default_servings"
+    private static let keyKeepScreenOn = "toepfle_keep_screen_on"
 
     public static var sharedDefaults: UserDefaults? {
         UserDefaults(suiteName: appGroupID)
     }
 
-    public static var backendURL: String {
+    public static var defaultServings: Int {
         get {
-            let stored = sharedDefaults?.string(forKey: keyBackendURL)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let stored = stored, !stored.isEmpty {
-                return stored
+            let val = sharedDefaults?.integer(forKey: keyDefaultServings) ?? 0
+            return val > 0 ? val : 4
+        }
+        set {
+            sharedDefaults?.set(newValue, forKey: keyDefaultServings)
+        }
+    }
+
+    public static var keepScreenOnDuringCooking: Bool {
+        get {
+            if sharedDefaults?.object(forKey: keyKeepScreenOn) == nil {
+                return true
             }
-            return defaultBackendURL
+            return sharedDefaults?.bool(forKey: keyKeepScreenOn) ?? true
         }
         set {
-            sharedDefaults?.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: keyBackendURL)
+            sharedDefaults?.set(newValue, forKey: keyKeepScreenOn)
         }
-    }
-
-    public static var apiKey: String {
-        get {
-            sharedDefaults?.string(forKey: keyAPIKey) ?? ""
-        }
-        set {
-            sharedDefaults?.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: keyAPIKey)
-        }
-    }
-
-    public static func resetBackendURLToDefault() {
-        sharedDefaults?.set(defaultBackendURL, forKey: keyBackendURL)
     }
 }

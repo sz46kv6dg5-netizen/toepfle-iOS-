@@ -133,7 +133,7 @@ public struct RecipeListView: View {
                             Text(statusText(for: item.status))
                                 .font(.subheadline.weight(.semibold))
 
-                            Text(item.url)
+                            Text(!item.url.isEmpty ? item.url : (item.rawText ?? "Rezept-Import"))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
@@ -178,7 +178,7 @@ public struct RecipeListView: View {
         case .queued:
             return "Wartet in der Warteschlange…"
         case .processing:
-            return "KI analysiert Video & Rezept…"
+            return "Rezept wird lokal analysiert…"
         case .failed:
             return "Import fehlgeschlagen"
         }

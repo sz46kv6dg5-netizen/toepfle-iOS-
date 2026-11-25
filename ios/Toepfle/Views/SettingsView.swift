@@ -1,111 +1,72 @@
 import SwiftUI
+import SwiftData
 
 public struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Query private var allRecipes: [SavedRecipe]
 
-    @State private var backendURL: String = ""
-    @State private var apiKey: String = ""
-    @State private var isTestingConnection: Bool = false
-    @State private var connectionStatus: ConnectionStatus = .idle
-    @State private var isAPIKeyVisible: Bool = false
-
-    private enum ConnectionStatus: Equatable {
-        case idle
-        case success
-        case failed(String)
-    }
+    @State private var defaultServings: Int = 4
+    @State private var keepScreenOn: Bool = true
+    @State private var exportFileURL: URL? = nil
+    @State private var showShareSheet: Bool = false
 
     public init() {}
 
     public var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    TextField("https://rezepte.icareberlin.de/api", text: $backendURL)
-                        .keyboardType(.URL)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .onChange(of: backendURL) { _, newValue in
-                            SharedConstants.backendURL = newValue
-                            connectionStatus = .idle
+                // 1. Koch- & Anzeige-Präferenzen
+                Section("Kochen & Portionen") {
+                    Stepper("Standard-Portionen: \(defaultServings)", value: $defaultServings, in: 1...12)
+                        .onChange(of: defaultServings) { _, newValue in
+                            SharedConstants.defaultServings = newValue
                         }
 
-                    Button("Auf Standard-URL zurücksetzen") {
-                        SharedConstants.resetBackendURLToDefault()
-                        backendURL = SharedConstants.defaultBackendURL
-                        connectionStatus = .idle
-                    }
-                    .font(.footnote)
-                    .foregroundColor(.accentColor)
-                } header: {
-                    Text("Backend API URL")
-                } footer: {
-                    Text("Standard: \(SharedConstants.defaultBackendURL)")
+                    Toggle("Bildschirm beim Kochen anlassen", isOn: $keepScreenOn)
+                        .onChange(of: keepScreenOn) { _, newValue in
+                            SharedConstants.keepScreenOnDuringCooking = newValue
+                        }
                 }
 
+                // 2. Datenschutz & On-Device-Verarbeitung
                 Section {
-                    HStack {
-                        if isAPIKeyVisible {
-                            TextField("API Key", text: $apiKey)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
-                        } else {
-                            SecureField("API Key", text: $apiKey)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.shield.fill")
+                                .font(.title3)
+                                .foregroundColor(.green)
+                            Text("100 % On-Device & Privat")
+                                .font(.headline)
                         }
 
-                        Button {
-                            isAPIKeyVisible.toggle()
-                        } label: {
-                            Image(systemName: isAPIKeyVisible ? "eye.slash" : "eye")
-                                .foregroundColor(.secondary)
-                        }
+                        Text("Töpfle arbeitet komplett lokal auf deinem iPhone. Alle Rezepte, Links, oEmbed-Daten und HTML-Analysen werden direkt auf deinem Gerät verarbeitet. Es existiert kein externes Backend-Server-Tracking.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
-                    .onChange(of: apiKey) { _, newValue in
-                        SharedConstants.apiKey = newValue
-                        connectionStatus = .idle
-                    }
+                    .padding(.vertical, 4)
                 } header: {
-                    Text("Sicherheits-Schlüssel (X-API-Key)")
-                } footer: {
-                    Text("Wird für geschützte Anfragen an das Töpfle-Backend verwendet.")
+                    Text("Datenschutz")
                 }
 
-                Section {
+                // 3. Backup & Export
+                Section("Daten & Backup") {
                     Button {
-                        testConnection()
+                        exportRecipesAsJSON()
                     } label: {
                         HStack {
-                            if isTestingConnection {
-                                ProgressView()
-                                    .padding(.trailing, 8)
-                            }
-                            Text("Verbindung testen")
+                            Image(systemName: "square.and.arrow.up")
+                                .foregroundColor(.accentColor)
+                            Text("Rezepte als JSON exportieren (\(allRecipes.count) Rezepte)")
                         }
                     }
-                    .disabled(isTestingConnection)
-
-                    if connectionStatus == .success {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Erfolgreich mit Backend verbunden!")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundColor(.green)
-                        }
-                    } else if case .failed(let msg) = connectionStatus {
-                        HStack(alignment: .top) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.red)
-                            Text(msg)
-                                .font(.footnote)
-                                .foregroundColor(.red)
-                        }
-                    }
+                    .disabled(allRecipes.isEmpty)
                 }
 
+                // 4. App-Informationen
                 Section("App-Informationen") {
                     LabeledContent("App", value: "Töpfle")
                     LabeledContent("Version", value: "1.0.0 (Build 1)")
+                    LabeledContent("Architektur", value: "100 % On-Device")
                     LabeledContent("App Group", value: SharedConstants.appGroupID)
                     LabeledContent("Bundle ID", value: "de.toepfle.app")
                 }
@@ -120,29 +81,65 @@ public struct SettingsView: View {
                 }
             }
             .onAppear {
-                backendURL = SharedConstants.backendURL
-                apiKey = SharedConstants.apiKey
+                defaultServings = SharedConstants.defaultServings
+                keepScreenOn = SharedConstants.keepScreenOnDuringCooking
             }
-        }
-    }
-
-    private func testConnection() {
-        isTestingConnection = true
-        connectionStatus = .idle
-
-        Task {
-            do {
-                let success = try await RecipeAPIService.shared.checkHealth()
-                await MainActor.run {
-                    self.isTestingConnection = false
-                    self.connectionStatus = success ? .success : .failed("Server antwortete nicht mit OK.")
-                }
-            } catch {
-                await MainActor.run {
-                    self.isTestingConnection = false
-                    self.connectionStatus = .failed(error.localizedDescription)
+            .sheet(isPresented: $showShareSheet) {
+                if let url = exportFileURL {
+                    ShareSheetRepresentable(activityItems: [url])
                 }
             }
         }
     }
+
+    private func exportRecipesAsJSON() {
+        struct RecipeExportDTO: Codable {
+            let title: String
+            let prepTime: String
+            let baseServings: Int
+            let category: String
+            let ingredients: [IngredientItem]
+            let instructions: [String]
+            let originalURL: String
+            let sourcePlatform: String
+            let isFavorite: Bool
+            let createdAt: Date
+        }
+
+        let exportList = allRecipes.map { r in
+            RecipeExportDTO(
+                title: r.title,
+                prepTime: r.prepTime,
+                baseServings: r.baseServings,
+                category: r.category,
+                ingredients: r.ingredients,
+                instructions: r.instructions,
+                originalURL: r.originalURL,
+                sourcePlatform: r.sourcePlatform,
+                isFavorite: r.isFavorite,
+                createdAt: r.createdAt
+            )
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+
+        guard let data = try? encoder.encode(exportList) else { return }
+
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("Toepfle_Rezepte_Backup.json")
+        try? data.write(to: tempURL)
+        self.exportFileURL = tempURL
+        self.showShareSheet = true
+    }
+}
+
+private struct ShareSheetRepresentable: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

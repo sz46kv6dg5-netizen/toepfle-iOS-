@@ -11,6 +11,7 @@ public struct RecipeDetailView: View {
     @State private var checkedIngredients: Set<UUID> = []
     @State private var completedSteps: Set<Int> = []
     @State private var isVideoExpanded: Bool = true
+    @State private var showEditSheet: Bool = false
 
     private let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
 
@@ -27,8 +28,10 @@ public struct RecipeDetailView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // 1. Eingebetteter Video-Player
-                videoSection
+                // 1. Eingebetteter Video-Player (falls URL vorhanden)
+                if !recipe.originalURL.isEmpty {
+                    videoSection
+                }
 
                 // 2. Rezept-Header & Metadaten
                 headerSection
@@ -59,22 +62,34 @@ public struct RecipeDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    recipe.isFavorite.toggle()
-                    try? modelContext.save()
-                    impactFeedback.impactOccurred()
-                } label: {
-                    Image(systemName: recipe.isFavorite ? "heart.fill" : "heart")
-                        .foregroundColor(recipe.isFavorite ? .red : .primary)
+                HStack(spacing: 12) {
+                    Button {
+                        showEditSheet = true
+                    } label: {
+                        Image(systemName: "pencil.circle")
+                            .font(.title3)
+                    }
+
+                    Button {
+                        recipe.isFavorite.toggle()
+                        try? modelContext.save()
+                        impactFeedback.impactOccurred()
+                    } label: {
+                        Image(systemName: recipe.isFavorite ? "heart.fill" : "heart")
+                            .foregroundColor(recipe.isFavorite ? .red : .primary)
+                    }
                 }
             }
         }
+        .sheet(isPresented: $showEditSheet) {
+            EditRecipeSheet(recipe: recipe)
+        }
         .onAppear {
-            // Kochmodus: Display bleibt an
-            UIApplication.shared.isIdleTimerDisabled = true
+            if SharedConstants.keepScreenOnDuringCooking {
+                UIApplication.shared.isIdleTimerDisabled = true
+            }
         }
         .onDisappear {
-            // Kochmodus beenden
             UIApplication.shared.isIdleTimerDisabled = false
         }
     }
@@ -105,7 +120,7 @@ public struct RecipeDetailView: View {
 
                 Spacer()
 
-                if let url = URL(string: recipe.originalURL) {
+                if let url = URL(string: recipe.originalURL), url.scheme != nil {
                     Link(destination: url) {
                         HStack(spacing: 4) {
                             Text("In Original-App öffnen")
@@ -269,7 +284,7 @@ public struct RecipeDetailView: View {
 
             let ingredientsList = recipe.ingredients
             if ingredientsList.isEmpty {
-                Text("Keine Zutaten hinterlegt.")
+                Text("Keine Zutaten hinterlegt. Tippe auf Bearbeiten, um Zutaten einzutragen.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             } else {

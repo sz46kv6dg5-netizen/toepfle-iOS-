@@ -8,7 +8,8 @@ public enum ImportStatus: String, Codable, CaseIterable {
 
 public struct PendingImport: Codable, Identifiable, Equatable {
     public let id: UUID
-    public let url: String
+    public var url: String
+    public var rawText: String?
     public let createdAt: Date
     public var status: ImportStatus
     public var errorMessage: String?
@@ -16,12 +17,14 @@ public struct PendingImport: Codable, Identifiable, Equatable {
     public init(
         id: UUID = UUID(),
         url: String,
+        rawText: String? = nil,
         createdAt: Date = Date(),
         status: ImportStatus = .queued,
         errorMessage: String? = nil
     ) {
         self.id = id
         self.url = url
+        self.rawText = rawText
         self.createdAt = createdAt
         self.status = status
         self.errorMessage = errorMessage
@@ -81,16 +84,16 @@ public final class PendingImportStore {
     }
 
     @discardableResult
-    public func addImport(url: String) -> PendingImport {
+    public func addImport(url: String, rawText: String? = nil) -> PendingImport {
         let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         var items = loadQueue()
 
         // Vermeide doppelte identische Queued/Processing Einträge
-        if let existing = items.first(where: { $0.url == cleanURL && ($0.status == .queued || $0.status == .processing) }) {
+        if !cleanURL.isEmpty, let existing = items.first(where: { $0.url == cleanURL && ($0.status == .queued || $0.status == .processing) }) {
             return existing
         }
 
-        let newEntry = PendingImport(url: cleanURL, status: .queued)
+        let newEntry = PendingImport(url: cleanURL, rawText: rawText, status: .queued)
         items.insert(newEntry, at: 0)
         saveQueue(items)
         return newEntry

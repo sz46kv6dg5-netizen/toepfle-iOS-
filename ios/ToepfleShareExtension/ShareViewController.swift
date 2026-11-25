@@ -38,7 +38,7 @@ final class ShareViewController: UIViewController {
     private let subtitleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = "Rezept wird vorbereitet…"
+        label.text = "Rezept wird lokal vorbereitet…"
         label.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         label.textColor = UIColor.secondaryLabel
         label.textAlignment = .center
@@ -49,7 +49,7 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = UIColor.black.withAlphaComponent(0.4)
         setupUI()
-        extractAndQueueURL()
+        extractAndQueueContent()
     }
 
     private func setupUI() {
@@ -86,16 +86,17 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    private func extractAndQueueURL() {
+    private func extractAndQueueContent() {
         guard let extensionItem = extensionContext?.inputItems.first as? NSExtensionItem,
               let attachments = extensionItem.attachments,
               !attachments.isEmpty else {
-            finishAndDismiss(delay: 0.7)
+            finishAndDismiss(delay: 0.6)
             return
         }
 
         let group = DispatchGroup()
         var foundURLString: String?
+        var foundPlainText: String?
 
         for itemProvider in attachments {
             // 1. Direkte Web-URL
@@ -111,14 +112,17 @@ final class ShareViewController: UIViewController {
                 }
             }
 
-            // 2. Text mit eingebetteter URL (typisch für TikTok & Facebook Shares)
+            // 2. Markierter Text (kann eine eingebettete URL ODER rezepttext sein)
             if itemProvider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
                 group.enter()
                 itemProvider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
                     defer { group.leave() }
-                    if let text = item as? String {
-                        if let extracted = self.extractFirstURL(from: text) {
-                            foundURLString = extracted
+                    if let text = item as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        foundPlainText = text
+                        if let extractedURL = self.extractFirstURL(from: text) {
+                            if foundURLString == nil {
+                                foundURLString = extractedURL
+                            }
                         }
                     }
                 }
@@ -127,9 +131,12 @@ final class ShareViewController: UIViewController {
 
         group.notify(queue: .main) {
             if let validURL = foundURLString, !validURL.isEmpty {
-                PendingImportStore.shared.addImport(url: validURL)
+                PendingImportStore.shared.addImport(url: validURL, rawText: foundPlainText)
+            } else if let text = foundPlainText, !text.isEmpty {
+                // Direkter Text-Import ohne URL
+                PendingImportStore.shared.addImport(url: "", rawText: text)
             }
-            self.finishAndDismiss(delay: 0.7)
+            self.finishAndDismiss(delay: 0.6)
         }
     }
 

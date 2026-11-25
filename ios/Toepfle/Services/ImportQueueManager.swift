@@ -17,8 +17,8 @@ public final class ImportQueueManager {
         self.queue = PendingImportStore.shared.loadQueue()
     }
 
-    public func addManualImport(url: String, modelContext: ModelContext) {
-        let entry = PendingImportStore.shared.addImport(url: url)
+    public func addManualImport(url: String, rawText: String? = nil, modelContext: ModelContext) {
+        PendingImportStore.shared.addImport(url: url, rawText: rawText)
         refreshQueue()
         processQueue(modelContext: modelContext)
     }
@@ -48,37 +48,33 @@ public final class ImportQueueManager {
                 PendingImportStore.shared.updateStatus(id: item.id, status: .processing, errorMessage: nil)
                 self.refreshQueue()
 
-                do {
-                    let dto = try await RecipeAPIService.shared.extractRecipe(from: item.url)
+                let extracted = await OnDeviceRecipeExtractor.shared.extract(
+                    from: item.url,
+                    rawText: item.rawText
+                )
 
-                    let ingredients = dto.ingredients.map {
-                        IngredientItem(amount: $0.amount, unit: $0.unit, name: $0.name)
-                    }
+                let defaultServings = SharedConstants.defaultServings
+                let initialServings = extracted.servings > 0 ? extracted.servings : defaultServings
 
-                    let newRecipe = SavedRecipe(
-                        title: dto.title,
-                        prepTime: dto.prep_time,
-                        baseServings: dto.servings,
-                        category: dto.category,
-                        ingredients: ingredients,
-                        instructions: dto.instructions,
-                        originalURL: dto.original_url.isEmpty ? item.url : dto.original_url,
-                        sourcePlatform: dto.source_platform,
-                        thumbnailURL: dto.thumbnail_url,
-                        createdAt: Date(),
-                        isFavorite: false
-                    )
+                let newRecipe = SavedRecipe(
+                    title: extracted.title,
+                    prepTime: extracted.prepTime,
+                    baseServings: initialServings,
+                    category: extracted.category,
+                    ingredients: extracted.ingredients,
+                    instructions: extracted.instructions,
+                    originalURL: extracted.originalURL.isEmpty ? item.url : extracted.originalURL,
+                    sourcePlatform: extracted.sourcePlatform,
+                    thumbnailURL: extracted.thumbnailURL,
+                    createdAt: Date(),
+                    isFavorite: false
+                )
 
-                    modelContext.insert(newRecipe)
-                    try? modelContext.save()
+                modelContext.insert(newRecipe)
+                try? modelContext.save()
 
-                    // Erfolgreich verarbeitet -> Aus der Queue entfernen
-                    PendingImportStore.shared.removeImport(id: item.id)
-                } catch {
-                    let errorMsg = (error as? APIError)?.localizedDescription ?? error.localizedDescription
-                    PendingImportStore.shared.updateStatus(id: item.id, status: .failed, errorMessage: errorMsg)
-                }
-
+                // Erfolgreich verarbeitet -> Aus der Queue entfernen
+                PendingImportStore.shared.removeImport(id: item.id)
                 self.refreshQueue()
             }
 
