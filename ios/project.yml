@@ -11,7 +11,7 @@ settings:
     SWIFT_VERSION: "5.9"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     TARGETED_DEVICE_FAMILY: "1"
-    DEVELOPMENT_TEAM: "$(APPLE_TEAM_ID)"
+    DEVELOPMENT_TEAM: "${APPLE_TEAM_ID:-73W2942M4H}"
     CODE_SIGN_STYLE: Automatic
 
 targets:
@@ -28,7 +28,7 @@ targets:
         CFBundleDisplayName: "Töpfle"
         PRODUCT_BUNDLE_IDENTIFIER: de.toepfle.app
         INFOPLIST_FILE: Toepfle/Info.plist
-        DEVELOPMENT_TEAM: "$(APPLE_TEAM_ID)"
+        DEVELOPMENT_TEAM: "${APPLE_TEAM_ID:-73W2942M4H}"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Toepfle/Toepfle.entitlements
         GENERATE_INFOPLIST_FILE: NO
@@ -49,7 +49,7 @@ targets:
         CFBundleDisplayName: "Töpfle"
         PRODUCT_BUNDLE_IDENTIFIER: de.toepfle.app.share
         INFOPLIST_FILE: ToepfleShareExtension/Info.plist
-        DEVELOPMENT_TEAM: "$(APPLE_TEAM_ID)"
+        DEVELOPMENT_TEAM: "${APPLE_TEAM_ID:-73W2942M4H}"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: ToepfleShareExtension/ToepfleShareExtension.entitlements
         GENERATE_INFOPLIST_FILE: NO

@@ -142,20 +142,21 @@ jobs:
             -exportOptionsPlist ExportOptions.plist \
             -exportPath build/export \
             -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" \
             -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
             -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}"; then
 
             echo "=== xcodebuild -exportArchive fehlgeschlagen ==="
-            echo "=== Suche nach IDEDistribution.standard.log in /var/folders ==="
-            find /var/folders -name "IDEDistribution.standard.log" -o -name "*.xcdistributionlogs" -o -name "IDEDistribution*.log" 2>/dev/null | while read -r logfile; do
+            echo "=== Gefilterte Fehlerursachen aus IDEDistribution-Logs ==="
+            find /var/folders -name "IDEDistribution.standard.log" -o -name "IDEDistribution*.log" -o -name "*.xcdistributionlogs" 2>/dev/null | while read -r logfile; do
               echo "--------------------------------------------------------"
               echo "Logdatei: $logfile"
               echo "--------------------------------------------------------"
-              if [ -d "$logfile" ]; then
-                cat "$logfile"/* 2>/dev/null || true
-              else
-                cat "$logfile" 2>/dev/null || true
+              if [ -f "$logfile" ]; then
+                grep -iE "error|account|certificate|profile|sign" "$logfile" || true
+              elif [ -d "$logfile" ]; then
+                grep -riE "error|account|certificate|profile|sign" "$logfile" || true
               fi
             done
             exit 1
@@ -182,15 +183,21 @@ jobs:
       - name: Print Distribution Logs on Failure
         if: failure()
         run: |
-          echo "=== Suche nach Distribution Logs ==="
-          find /var/folders -name "*.xcdistributionlogs" -o -name "IDEDistribution*.log" 2>/dev/null | while read -r logfile; do
-            echo "--------------------------------------------------------"
-            echo "Log: $logfile"
-            echo "--------------------------------------------------------"
-            if [ -d "$logfile" ]; then
-              cat "$logfile"/* 2>/dev/null || true
-            else
+          echo "=== Suche nach Distribution Logs (gefiltert auf Fehlerursachen) ==="
+          find /var/folders -name "IDEDistribution.standard.log" -o -name "IDEDistribution*.log" -o -name "*.xcdistributionlogs" 2>/dev/null | while read -r logfile; do
+            echo "========================================================"
+            echo "Logdatei: $logfile"
+            echo "========================================================"
+            if [ -f "$logfile" ]; then
+              echo "--- Relevante Fehlerzeilen (error / account / certificate / profile / sign) ---"
+              grep -iE "error|account|certificate|profile|sign" "$logfile" || true
+              echo "--- Vollständiger Inhalt von $logfile ---"
               cat "$logfile" 2>/dev/null || true
+            elif [ -d "$logfile" ]; then
+              echo "--- Relevante Fehlerzeilen in Verzeichnis ---"
+              grep -riE "error|account|certificate|profile|sign" "$logfile" || true
+              echo "--- Vollständiger Inhalt des Verzeichnisses ---"
+              cat "$logfile"/* 2>/dev/null || true
             fi
           done
 
