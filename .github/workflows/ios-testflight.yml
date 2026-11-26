@@ -25,9 +25,9 @@ jobs:
       - name: Verify Required Secrets
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          API_KEY_DATA: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID || secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID || secrets.APPSTORE_ISSUER_ID }}
+          API_KEY_DATA: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 || secrets.APPSTORE_PRIVATE_KEY }}
         run: |
           MISSING=""
           [ -z "$TEAM_ID" ] && MISSING="$MISSING APPLE_TEAM_ID"
@@ -38,7 +38,7 @@ jobs:
             echo "::error::Folgende GitHub Repository Secrets fehlen noch:$MISSING"
             exit 1
           fi
-          echo "Alle 4 benötigten Secrets sind vorhanden."
+          echo "Alle benötigten Secrets sind vorhanden."
 
       - name: Select Latest Xcode Version
         run: |
@@ -96,13 +96,17 @@ jobs:
           xcodegen generate --spec project.yml
 
       - name: Build & Archive (Unsigned)
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           mkdir -p build
           xcodebuild archive \
             -project ios/Toepfle.xcodeproj \
             -scheme Toepfle \
+            -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath build/Toepfle.xcarchive \
+            DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -111,8 +115,8 @@ jobs:
       - name: Export & Sign IPA per App Store Connect API
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID || secrets.APPSTORE_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID || secrets.APPSTORE_ISSUER_ID }}
         run: |
           mkdir -p build/export
 
@@ -133,19 +137,34 @@ jobs:
           </plist>
           EOF
 
-          xcodebuild -exportArchive \
+          if ! xcodebuild -exportArchive \
             -archivePath build/Toepfle.xcarchive \
             -exportOptionsPlist ExportOptions.plist \
             -exportPath build/export \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" \
-            -authenticationKeyID "$APP_STORE_CONNECT_API_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+            -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
+            -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}"; then
+
+            echo "=== xcodebuild -exportArchive fehlgeschlagen ==="
+            echo "=== Suche nach IDEDistribution.standard.log in /var/folders ==="
+            find /var/folders -name "IDEDistribution.standard.log" -o -name "*.xcdistributionlogs" -o -name "IDEDistribution*.log" 2>/dev/null | while read -r logfile; do
+              echo "--------------------------------------------------------"
+              echo "Logdatei: $logfile"
+              echo "--------------------------------------------------------"
+              if [ -d "$logfile" ]; then
+                cat "$logfile"/* 2>/dev/null || true
+              else
+                cat "$logfile" 2>/dev/null || true
+              fi
+            done
+            exit 1
+          fi
 
       - name: Upload to TestFlight
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID || secrets.APPSTORE_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID || secrets.APPSTORE_ISSUER_ID }}
         run: |
           IPA_PATH=$(find build/export -name "*.ipa" | head -n 1)
           if [ -z "$IPA_PATH" ]; then
@@ -157,8 +176,8 @@ jobs:
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA_PATH" \
-            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+            --apiKey "${APP_STORE_CONNECT_API_KEY_ID}" \
+            --apiIssuer "${APP_STORE_CONNECT_ISSUER_ID}"
 
       - name: Print Distribution Logs on Failure
         if: failure()
