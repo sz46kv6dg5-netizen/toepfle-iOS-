@@ -53,18 +53,16 @@ jobs:
 
       - name: Configure App Store Connect API Key
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID || secrets.APPSTORE_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 || secrets.APPSTORE_PRIVATE_KEY }}
         run: |
-          mkdir -p ~/.private_keys
-          KEY_FILE="$HOME/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          mkdir -p ~/.private_keys ~/private_keys
 
           python3 - <<'PY'
           import os, base64, textwrap
 
           raw = os.environ.get("APP_STORE_CONNECT_API_KEY_BASE64", "").strip()
           key_id = os.environ["APP_STORE_CONNECT_API_KEY_ID"].strip()
-          out_path = os.path.expanduser(f"~/.private_keys/AuthKey_{key_id}.p8")
 
           if "BEGIN PRIVATE KEY" not in raw:
               raw = base64.b64decode("".join(raw.split())).decode("utf-8")
@@ -76,12 +74,19 @@ jobs:
           body = "".join(body.split())
           pem = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(textwrap.wrap(body, 64)) + "\n-----END PRIVATE KEY-----\n"
 
-          with open(out_path, "w", encoding="utf-8") as f:
-              f.write(pem)
-          os.chmod(out_path, 0o600)
+          paths = [
+              os.path.expanduser(f"~/.private_keys/AuthKey_{key_id}.p8"),
+              os.path.expanduser(f"~/private_keys/AuthKey_{key_id}.p8")
+          ]
+          for p in paths:
+              os.makedirs(os.path.dirname(p), exist_ok=True)
+              with open(p, "w", encoding="utf-8") as f:
+                  f.write(pem)
+              os.chmod(p, 0o600)
           PY
 
-          openssl pkey -in "$KEY_FILE" -noout
+          openssl pkey -in "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" -noout
+          openssl pkey -in "$HOME/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" -noout
 
       - name: Generate Xcode Project with XcodeGen
         env:
@@ -133,7 +138,7 @@ jobs:
             -exportOptionsPlist ExportOptions.plist \
             -exportPath build/export \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" \
             -authenticationKeyID "$APP_STORE_CONNECT_API_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
 
@@ -173,4 +178,4 @@ jobs:
       - name: Cleanup Private Keys
         if: always()
         run: |
-          rm -rf ~/.private_keys
+          rm -rf ~/.private_keys ~/private_keys
